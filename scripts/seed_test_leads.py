@@ -20,20 +20,20 @@ async def seed():
 
         leads = [
             Lead(
-            name="Sujan Nandikol Sunilkumar",
-            phone="+19259676795",
-            email="nandikolsujan@gmail.com",
+            name="Test Lead One",
+            phone="+10000000001",
+            email="test1@example.com",
             source="test",
-            property_interest="Looking to buy in San Jose, Communication Hills, 5 bed 4 bath, budget 1.7M",
+            property_interest="Looking to buy in San Jose, 5 bed 4 bath, budget 1.7M",
             temperature=LeadTemperature.hot_inbound,
             state=LeadState.new,
             channel=LeadChannel.text,
-            consent_verified=True,    
+            consent_verified=True,
             ),
             Lead(
-            name="Yashi Rajan", 
-            phone="+19253182956",
-            email="sujan.nandikolsunilkumar@sjsu.edu",
+            name="Test Lead Two",
+            phone="+10000000002",
+            email="test2@example.com",
             source='test',
             property_interest="Looking to purchase a house in Mountain View, 3 bed 2 bath minimum",
             temperature=LeadTemperature.hot_inbound,
