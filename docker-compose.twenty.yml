@@ -1,0 +1,154 @@
+# Docker Compose for self-hosting Twenty CRM
+# Sourced from: https://raw.githubusercontent.com/twentyhq/twenty/main/packages/twenty-docker/docker-compose.yml
+# This is SEPARATE from the Neon DB used by cold-leads — Twenty has its own Postgres instance here.
+#
+# Required: copy .env.twenty.example to .env.twenty and fill in secrets before running.
+# Start with: docker compose -f docker-compose.twenty.yml --env-file .env.twenty up -d
+
+name: twenty
+
+services:
+  server:
+    image: twentycrm/twenty:${TAG:-latest}
+    volumes:
+      - server-local-data:/app/packages/twenty-server/.local-storage
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_PORT: 3000
+      # Twenty's own Postgres (the db service below — NOT the cold-leads Neon DB)
+      PG_DATABASE_URL: postgres://${PG_DATABASE_USER:-twenty}:${PG_DATABASE_PASSWORD:-twenty}@db:5432/default
+
+      # Public URL where Twenty will be reachable (update for production)
+      SERVER_URL: ${SERVER_URL:-http://localhost:3000}
+
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+
+      # Required: secret key used for JWT signing — MUST be changed in production
+      # Generate with: openssl rand -base64 32
+      APP_SECRET: ${APP_SECRET:-change-me-in-production}
+
+      # Required: encryption key for OAuth tokens and stored secrets
+      # Generate with: openssl rand -base64 32
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-change-me-in-production}
+      FALLBACK_ENCRYPTION_KEY: ${FALLBACK_ENCRYPTION_KEY:-}
+
+      # Storage: local filesystem by default (no S3 required)
+      # To switch to S3, set STORAGE_TYPE=s3 and fill in S3 vars below
+      STORAGE_TYPE: ${STORAGE_TYPE:-local}
+      # STORAGE_S3_REGION: ${STORAGE_S3_REGION}
+      # STORAGE_S3_NAME: ${STORAGE_S3_NAME}
+      # STORAGE_S3_ENDPOINT: ${STORAGE_S3_ENDPOINT}
+
+      DISABLE_DB_MIGRATIONS: ${DISABLE_DB_MIGRATIONS:-false}
+      DISABLE_CRON_JOBS_REGISTRATION: ${DISABLE_CRON_JOBS_REGISTRATION:-false}
+
+      # --- Optional: Google OAuth / Gmail / Calendar integration ---
+      # MESSAGING_PROVIDER_GMAIL_ENABLED: ${MESSAGING_PROVIDER_GMAIL_ENABLED}
+      # CALENDAR_PROVIDER_GOOGLE_ENABLED: ${CALENDAR_PROVIDER_GOOGLE_ENABLED}
+      # AUTH_GOOGLE_CLIENT_ID: ${AUTH_GOOGLE_CLIENT_ID}
+      # AUTH_GOOGLE_CLIENT_SECRET: ${AUTH_GOOGLE_CLIENT_SECRET}
+      # AUTH_GOOGLE_CALLBACK_URL: ${AUTH_GOOGLE_CALLBACK_URL}
+      # AUTH_GOOGLE_APIS_CALLBACK_URL: ${AUTH_GOOGLE_APIS_CALLBACK_URL}
+
+      # --- Optional: Microsoft OAuth / Outlook / Calendar integration ---
+      # CALENDAR_PROVIDER_MICROSOFT_ENABLED: ${CALENDAR_PROVIDER_MICROSOFT_ENABLED}
+      # MESSAGING_PROVIDER_MICROSOFT_ENABLED: ${MESSAGING_PROVIDER_MICROSOFT_ENABLED}
+      # AUTH_MICROSOFT_ENABLED: ${AUTH_MICROSOFT_ENABLED}
+      # AUTH_MICROSOFT_CLIENT_ID: ${AUTH_MICROSOFT_CLIENT_ID}
+      # AUTH_MICROSOFT_CLIENT_SECRET: ${AUTH_MICROSOFT_CLIENT_SECRET}
+      # AUTH_MICROSOFT_CALLBACK_URL: ${AUTH_MICROSOFT_CALLBACK_URL}
+      # AUTH_MICROSOFT_APIS_CALLBACK_URL: ${AUTH_MICROSOFT_APIS_CALLBACK_URL}
+
+      # --- Optional: outbound email (SMTP) ---
+      # EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-contact@yourdomain.com}
+      # EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-"Cold Leads CRM"}
+      # EMAIL_DRIVER: ${EMAIL_DRIVER:-smtp}
+      # EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST:-smtp.gmail.com}
+      # EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT:-465}
+      # EMAIL_SMTP_USER: ${EMAIL_SMTP_USER:-}
+      # EMAIL_SMTP_PASSWORD: ${EMAIL_SMTP_PASSWORD:-}
+
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: curl --fail http://localhost:3000/healthz
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: always
+
+  worker:
+    image: twentycrm/twenty:${TAG:-latest}
+    volumes:
+      - server-local-data:/app/packages/twenty-server/.local-storage
+    command: ["yarn", "worker:prod"]
+    environment:
+      PG_DATABASE_URL: postgres://${PG_DATABASE_USER:-twenty}:${PG_DATABASE_PASSWORD:-twenty}@db:5432/default
+      SERVER_URL: ${SERVER_URL:-http://localhost:3000}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+
+      APP_SECRET: ${APP_SECRET:-change-me-in-production}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-change-me-in-production}
+      FALLBACK_ENCRYPTION_KEY: ${FALLBACK_ENCRYPTION_KEY:-}
+
+      # Workers should not run migrations or register cron jobs — server handles that
+      DISABLE_DB_MIGRATIONS: "true"
+      DISABLE_CRON_JOBS_REGISTRATION: "true"
+
+      STORAGE_TYPE: ${STORAGE_TYPE:-local}
+      # STORAGE_S3_REGION: ${STORAGE_S3_REGION}
+      # STORAGE_S3_NAME: ${STORAGE_S3_NAME}
+      # STORAGE_S3_ENDPOINT: ${STORAGE_S3_ENDPOINT}
+
+      # AUTH_GOOGLE_CLIENT_ID: ${AUTH_GOOGLE_CLIENT_ID}
+      # AUTH_GOOGLE_CLIENT_SECRET: ${AUTH_GOOGLE_CLIENT_SECRET}
+      # AUTH_GOOGLE_CALLBACK_URL: ${AUTH_GOOGLE_CALLBACK_URL}
+      # AUTH_GOOGLE_APIS_CALLBACK_URL: ${AUTH_GOOGLE_APIS_CALLBACK_URL}
+      # AUTH_MICROSOFT_CLIENT_ID: ${AUTH_MICROSOFT_CLIENT_ID}
+      # AUTH_MICROSOFT_CLIENT_SECRET: ${AUTH_MICROSOFT_CLIENT_SECRET}
+      # AUTH_MICROSOFT_CALLBACK_URL: ${AUTH_MICROSOFT_CALLBACK_URL}
+      # AUTH_MICROSOFT_APIS_CALLBACK_URL: ${AUTH_MICROSOFT_APIS_CALLBACK_URL}
+
+    depends_on:
+      db:
+        condition: service_healthy
+      server:
+        condition: service_healthy
+    restart: always
+
+  db:
+    # Dedicated Postgres for Twenty — completely separate from cold-leads' Neon DB
+    image: postgres:16
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${PG_DATABASE_NAME:-default}
+      POSTGRES_USER: ${PG_DATABASE_USER:-twenty}
+      POSTGRES_PASSWORD: ${PG_DATABASE_PASSWORD:-twenty}
+    healthcheck:
+      test: pg_isready -U ${PG_DATABASE_USER:-twenty} -h localhost -d postgres
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: always
+
+  redis:
+    image: redis:7
+    restart: always
+    # noeviction: never evict keys when memory is full (required for BullMQ job queues)
+    command: ["--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  # Twenty's Postgres data — persists across container restarts
+  db-data:
+  # Twenty's local file storage — attachments, uploaded files, etc.
+  server-local-data:

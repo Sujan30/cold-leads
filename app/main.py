@@ -7,6 +7,7 @@ from fastapi import BackgroundTasks, FastAPI, Request
 from app.config import settings
 from app.routers import health, webhooks
 from app.routers.admin import router as admin_router
+from app.routers.chat_viewer import router as chat_viewer_router
 from app.routers.leads import router as leads_router
 from app.workers.scheduler import scheduler
 
@@ -46,6 +47,7 @@ app.include_router(health.router)
 app.include_router(webhooks.router)
 app.include_router(admin_router)
 app.include_router(leads_router)
+app.include_router(chat_viewer_router)
 
 
 # Linq posts webhooks to the bare ngrok URL (no path) — catch them here.

@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     cal_event_slug: str = "30min"
     cal_event_type_id: int = 0
 
+    twenty_api_url: str = ""
+    twenty_api_key: str = ""
+    twenty_workspace_id: str = ""
+
     @property
     def async_database_url(self) -> str:
         # asyncpg requires postgresql+asyncpg:// scheme

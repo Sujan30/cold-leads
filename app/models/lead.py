@@ -49,6 +49,8 @@ class Lead(Base):
     consent_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     linq_chat_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     calcom_booking_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    twenty_person_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    twenty_opportunity_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     reply_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     reply_first_pending_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

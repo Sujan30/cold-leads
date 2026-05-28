@@ -84,6 +84,7 @@ async def _get_history(lead_id: int, db: AsyncSession) -> list[dict]:
 # ── Proactive outbound handlers ───────────────────────────────────────────────
 
 async def _handle_new(lead: Lead, db: AsyncSession) -> None:
+    from app.integrations import twenty
     logger.info("[STATE] handle_new — lead=%d name=%r temp=%s", lead.id, lead.name, lead.temperature)
     assert lead.consent_verified, f"Lead {lead.id} not consent-verified — blocking send"
 
@@ -116,6 +117,7 @@ async def _handle_new(lead: Lead, db: AsyncSession) -> None:
         logger.warning("Lead %s has no phone or email — skipping", lead.id)
 
     await db.commit()
+    await twenty.sync_lead(lead, db)
 
 
 async def _handle_contacted(lead: Lead, db: AsyncSession) -> None:
@@ -164,6 +166,7 @@ async def process_lead(lead: Lead, db: AsyncSession) -> None:
 
 async def handle_inbound(msg: InboundMessage, db: AsyncSession) -> None:
     """Saves the message and arms the debounce timer. Never calls AI."""
+    from app.integrations import twenty
     logger.info("[INBOUND] channel=%s sender=%s body=%r", msg.channel, msg.sender, msg.body[:100])
 
     if msg.channel == "text":
@@ -202,6 +205,7 @@ async def handle_inbound(msg: InboundMessage, db: AsyncSession) -> None:
         lead.reply_due_at = min(now + timedelta(seconds=DEBOUNCE_SECS), cap)
 
         await db.commit()
+        await twenty.sync_lead(lead, db)
 
     from app.services.sweeper import signal_work
     signal_work()
@@ -212,6 +216,7 @@ async def handle_inbound(msg: InboundMessage, db: AsyncSession) -> None:
 
 async def process_pending_reply(lead: Lead, db: AsyncSession) -> None:
     """Processes a lead whose debounce timer has expired. Called only by the sweeper."""
+    from app.integrations import twenty
 
     # Skip terminal states — nothing to reply to
     if lead.state in (LeadState.dormant, LeadState.booked, LeadState.handed_off):
@@ -272,11 +277,13 @@ async def process_pending_reply(lead: Lead, db: AsyncSession) -> None:
     if intent == "not_interested":
         lead.state = LeadState.dormant
         await db.commit()
+        await twenty.sync_lead(lead, db)
         return
 
     if intent == "wrong_number":
         lead.state = LeadState.dormant
         await db.commit()
+        await twenty.sync_lead(lead, db)
         return
 
     if intent == "ready_to_book":
@@ -304,6 +311,7 @@ async def process_pending_reply(lead: Lead, db: AsyncSession) -> None:
                         f"for {slot_str}. You'll get a calendar invite at {lead.email}. Talk soon!"
                     )
                     await db.commit()
+                    await twenty.sync_lead(lead, db)
                     await escalate_to_agent(
                         lead, f"Auto-booked via Cal.com — uid={uid} slot={slot_str}", db
                     )
@@ -425,3 +433,4 @@ async def process_pending_reply(lead: Lead, db: AsyncSession) -> None:
         lead.state = LeadState.qualifying
 
     await db.commit()
+    await twenty.sync_lead(lead, db)

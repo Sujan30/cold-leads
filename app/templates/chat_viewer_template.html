@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chat Viewer</title>
+  <style>
+    /* ── CSS Variables ─────────────────────────────────────────────────── */
+    :root {
+      --bg:                  #000000;
+      --bg-surface:          #1c1c1e;
+      --bg-bubble-inbound:   #3a3a3c;
+      --bg-bubble-outbound:  #0b84ff;
+      --text-primary:        #ffffff;
+      --text-secondary:      #8e8e93;
+      --text-bubble:         #ffffff;
+      --separator:           rgba(255,255,255,0.10);
+      --header-bg:           #1c1c1e;
+
+      /* intent colors */
+      --intent-interested:      #30d158;
+      --intent-ready-to-book:   #0a84ff;
+      --intent-not-interested:  #ff453a;
+      --intent-unclear:         #636366;
+      --intent-question:        #ffd60a;
+      --intent-wrong-number:    #ff453a;
+      --intent-default:         #636366;
+
+      /* state badge */
+      --state-bg:            #2c2c2e;
+      --state-text:          #aeaeb2;
+
+      --radius-bubble:       18px;
+      --radius-tail-corner:  4px;
+
+      --font-stack: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+                    "Helvetica Neue", Arial, sans-serif;
+    }
+
+    /* ── Reset & Base ──────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text-primary);
+      font-family: var(--font-stack);
+      font-size: 15px;
+      line-height: 1.4;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow: hidden;
+    }
+
+    /* ── Layout Shell ──────────────────────────────────────────────────── */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      max-width: 100%;
+      overflow: hidden;
+    }
+
+    /* ── Header ────────────────────────────────────────────────────────── */
+    #header {
+      flex-shrink: 0;
+      background: var(--header-bg);
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid var(--separator);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    #lead-name {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.2px;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+      line-height: 1.6;
+    }
+
+    .badge-state {
+      background: var(--state-bg);
+      color: var(--state-text);
+    }
+
+    /* intent badge colors — applied via JS */
+    .badge-intent-interested      { background: rgba(48,209,88,0.18);  color: var(--intent-interested); }
+    .badge-intent-ready_to_book   { background: rgba(10,132,255,0.18); color: var(--intent-ready-to-book); }
+    .badge-intent-not_interested  { background: rgba(255,69,58,0.18);  color: var(--intent-not-interested); }
+    .badge-intent-unclear         { background: rgba(99,99,102,0.25);  color: #aeaeb2; }
+    .badge-intent-question        { background: rgba(255,214,10,0.18); color: var(--intent-question); }
+    .badge-intent-wrong_number    { background: rgba(255,69,58,0.18);  color: var(--intent-wrong-number); }
+    .badge-intent-default         { background: rgba(99,99,102,0.25);  color: #aeaeb2; }
+
+    /* ── Message List ──────────────────────────────────────────────────── */
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 12px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+
+      /* Custom scrollbar */
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.15) transparent;
+    }
+    #messages::-webkit-scrollbar { width: 4px; }
+    #messages::-webkit-scrollbar-track { background: transparent; }
+    #messages::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.15);
+      border-radius: 2px;
+    }
+
+    /* ── Message Group ─────────────────────────────────────────────────── */
+    /*
+      A "group" holds consecutive messages from the same sender.
+      We use the group to control spacing: tighter within a group,
+      a gap between groups.
+    */
+    .msg-group {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 12px;
+    }
+    .msg-group:last-child { margin-bottom: 0; }
+
+    /* row = bubble + optional side margin */
+    .msg-row {
+      display: flex;
+      align-items: flex-end;
+      margin-bottom: 2px;
+    }
+    .msg-row:last-child { margin-bottom: 0; }
+
+    .msg-row.inbound  { justify-content: flex-start; }
+    .msg-row.outbound { justify-content: flex-end; }
+
+    /* ── Bubble ────────────────────────────────────────────────────────── */
+    .bubble {
+      position: relative;
+      max-width: 75%;
+      padding: 9px 13px;
+      font-size: 15px;
+      line-height: 1.45;
+      color: var(--text-bubble);
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+
+    /* Inbound — gray, tail bottom-left */
+    .bubble.inbound {
+      background: var(--bg-bubble-inbound);
+      border-radius: var(--radius-bubble) var(--radius-bubble)
+                     var(--radius-bubble) var(--radius-tail-corner);
+    }
+
+    /* Outbound — blue, tail bottom-right */
+    .bubble.outbound {
+      background: var(--bg-bubble-outbound);
+      border-radius: var(--radius-bubble) var(--radius-bubble)
+                     var(--radius-tail-corner) var(--radius-bubble);
+    }
+
+    /*
+      For messages that are NOT the last in their group, remove the tail:
+      the tail corner only appears on the final bubble of a consecutive run.
+    */
+    .msg-row:not(:last-child) .bubble.inbound {
+      border-radius: var(--radius-bubble) var(--radius-bubble)
+                     var(--radius-bubble) var(--radius-bubble);
+    }
+    .msg-row:not(:last-child) .bubble.outbound {
+      border-radius: var(--radius-bubble) var(--radius-bubble)
+                     var(--radius-bubble) var(--radius-bubble);
+    }
+
+    /* ── Tail pseudo-elements ──────────────────────────────────────────── */
+    /* Only the last bubble in a group renders a tail */
+    .msg-row:last-child .bubble.inbound::after,
+    .msg-row:last-child .bubble.outbound::after {
+      content: "";
+      position: absolute;
+      bottom: 0;
+      width: 10px;
+      height: 14px;
+    }
+
+    /* Inbound tail — points bottom-left */
+    .msg-row:last-child .bubble.inbound::after {
+      left: -6px;
+      background: var(--bg-bubble-inbound);
+      clip-path: polygon(100% 0, 100% 100%, 0% 100%);
+      border-bottom-left-radius: 2px;
+    }
+
+    /* Outbound tail — points bottom-right */
+    .msg-row:last-child .bubble.outbound::after {
+      right: -6px;
+      background: var(--bg-bubble-outbound);
+      clip-path: polygon(0 0, 0 100%, 100% 100%);
+      border-bottom-right-radius: 2px;
+    }
+
+    /* ── Timestamp ─────────────────────────────────────────────────────── */
+    .timestamp-row {
+      display: flex;
+      margin-top: 3px;
+      margin-bottom: 6px;
+    }
+    .timestamp-row.inbound  { justify-content: flex-start; padding-left: 4px; }
+    .timestamp-row.outbound { justify-content: flex-end;   padding-right: 4px; }
+
+    .timestamp {
+      font-size: 11px;
+      color: var(--text-secondary);
+      letter-spacing: 0.1px;
+    }
+
+    /* ── Intent Pill (below inbound bubble) ───────────────────────────── */
+    .intent-row {
+      display: flex;
+      justify-content: flex-start;
+      padding-left: 4px;
+      margin-bottom: 4px;
+    }
+
+    .intent-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 1px 7px;
+      border-radius: 20px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      line-height: 1.7;
+    }
+
+    /* same color mapping as header badges */
+    .intent-pill.interested      { background: rgba(48,209,88,0.15);  color: var(--intent-interested); }
+    .intent-pill.ready_to_book   { background: rgba(10,132,255,0.15); color: var(--intent-ready-to-book); }
+    .intent-pill.not_interested  { background: rgba(255,69,58,0.15);  color: var(--intent-not-interested); }
+    .intent-pill.unclear         { background: rgba(99,99,102,0.20);  color: #aeaeb2; }
+    .intent-pill.question        { background: rgba(255,214,10,0.15); color: var(--intent-question); }
+    .intent-pill.wrong_number    { background: rgba(255,69,58,0.15);  color: var(--intent-wrong-number); }
+    .intent-pill.default         { background: rgba(99,99,102,0.20);  color: #aeaeb2; }
+
+    /* ── Date divider ──────────────────────────────────────────────────── */
+    .date-divider {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 0 6px;
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.2px;
+    }
+    .date-divider::before,
+    .date-divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--separator);
+    }
+
+    /* ── Status States ─────────────────────────────────────────────────── */
+    #status-overlay {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 10px;
+      color: var(--text-secondary);
+      font-size: 15px;
+      padding: 24px;
+      text-align: center;
+    }
+    #status-overlay.hidden { display: none; }
+
+    /* Loading spinner */
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border: 2.5px solid rgba(255,255,255,0.12);
+      border-top-color: rgba(255,255,255,0.55);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .status-icon {
+      font-size: 32px;
+      margin-bottom: 4px;
+    }
+    .status-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .status-detail {
+      font-size: 13px;
+      color: var(--text-secondary);
+      max-width: 260px;
+    }
+  </style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Header (hidden until data loads) -->
+  <div id="header" style="display:none;">
+    <div id="lead-name"></div>
+    <div id="badge-row">
+      <span id="badge-state" class="badge badge-state"></span>
+      <span id="badge-intent" class="badge"></span>
+    </div>
+  </div>
+
+  <!-- Status overlay: loading / empty / error -->
+  <div id="status-overlay">
+    <div class="spinner"></div>
+    <div class="status-detail">Loading conversation…</div>
+  </div>
+
+  <!-- Message list -->
+  <div id="messages" style="display:none;"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ── Helpers ─────────────────────────────────────────────────────────── */
+
+  const INTENT_CLASSES = {
+    interested:     "interested",
+    ready_to_book:  "ready_to_book",
+    not_interested: "not_interested",
+    unclear:        "unclear",
+    question:       "question",
+    wrong_number:   "wrong_number",
+  };
+
+  const INTENT_LABELS = {
+    interested:     "Interested",
+    ready_to_book:  "Ready to Book",
+    not_interested: "Not Interested",
+    unclear:        "Unclear",
+    question:       "Question",
+    wrong_number:   "Wrong Number",
+  };
+
+  function intentClass(intent) {
+    return INTENT_CLASSES[intent] || "default";
+  }
+
+  function intentLabel(intent) {
+    return INTENT_LABELS[intent] || intent;
+  }
+
+  /**
+   * Format an ISO timestamp as "May 28, 2:14 PM" in the user's local timezone.
+   */
+  function formatTimestamp(iso) {
+    try {
+      const d = new Date(iso);
+      if (isNaN(d)) return "";
+      return d.toLocaleString("en-US", {
+        month: "short",
+        day:   "numeric",
+        hour:  "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
+    } catch (_) {
+      return "";
+    }
+  }
+
+  /**
+   * Return a date-only label for grouping by day: "May 28, 2026"
+   */
+  function dateLabel(iso) {
+    try {
+      const d = new Date(iso);
+      if (isNaN(d)) return "";
+      return d.toLocaleDateString("en-US", {
+        month: "long",
+        day:   "numeric",
+        year:  "numeric",
+      });
+    } catch (_) {
+      return "";
+    }
+  }
+
+  /**
+   * True if two ISO timestamps fall on the same calendar day (local time).
+   */
+  function sameDay(a, b) {
+    const da = new Date(a);
+    const db = new Date(b);
+    return (
+      da.getFullYear() === db.getFullYear() &&
+      da.getMonth()    === db.getMonth()    &&
+      da.getDate()     === db.getDate()
+    );
+  }
+
+  /* ── DOM refs ────────────────────────────────────────────────────────── */
+  const $header        = document.getElementById("header");
+  const $leadName      = document.getElementById("lead-name");
+  const $badgeState    = document.getElementById("badge-state");
+  const $badgeIntent   = document.getElementById("badge-intent");
+  const $statusOverlay = document.getElementById("status-overlay");
+  const $messages      = document.getElementById("messages");
+
+  /* ── Status helpers ──────────────────────────────────────────────────── */
+  function showStatus(icon, title, detail) {
+    $statusOverlay.classList.remove("hidden");
+    $statusOverlay.style.display = "flex";
+    $statusOverlay.innerHTML = `
+      ${icon ? `<div class="status-icon">${icon}</div>` : '<div class="spinner"></div>'}
+      ${title  ? `<div class="status-title">${escHtml(title)}</div>`  : ""}
+      ${detail ? `<div class="status-detail">${escHtml(detail)}</div>` : ""}
+    `;
+    $messages.style.display = "none";
+    $header.style.display   = "none";
+  }
+
+  function hideStatus() {
+    $statusOverlay.classList.add("hidden");
+    $statusOverlay.style.display = "none";
+  }
+
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  /* ── Render ──────────────────────────────────────────────────────────── */
+
+  function renderHeader(lead) {
+    $leadName.textContent = lead.name || "Unknown Lead";
+
+    // State badge
+    $badgeState.textContent = lead.state ? lead.state.replace(/_/g, " ") : "—";
+
+    // Intent badge
+    const intent = lead.latest_intent;
+    if (intent) {
+      const cls = intentClass(intent);
+      $badgeIntent.textContent = intentLabel(intent);
+      $badgeIntent.className = `badge badge-intent-${cls}`;
+      $badgeIntent.style.display = "";
+    } else {
+      $badgeIntent.style.display = "none";
+    }
+
+    $header.style.display = "";
+  }
+
+  /**
+   * Group consecutive messages by sender direction.
+   * Returns an array of groups: [{ direction, messages: [...] }, ...]
+   */
+  function groupMessages(messages) {
+    const groups = [];
+    for (const msg of messages) {
+      const last = groups[groups.length - 1];
+      if (last && last.direction === msg.direction) {
+        last.messages.push(msg);
+      } else {
+        groups.push({ direction: msg.direction, messages: [msg] });
+      }
+    }
+    return groups;
+  }
+
+  function renderMessages(messages) {
+    $messages.innerHTML = "";
+
+    if (!messages || messages.length === 0) {
+      showStatus("💬", "No messages yet", "This lead hasn't exchanged any messages yet.");
+      return;
+    }
+
+    hideStatus();
+    $messages.style.display = "flex";
+
+    // Sort by sent_at ascending (defensive — API should already sort)
+    const sorted = [...messages].sort(
+      (a, b) => new Date(a.sent_at) - new Date(b.sent_at)
+    );
+
+    const groups = groupMessages(sorted);
+    let lastDayLabel = null;
+
+    for (const group of groups) {
+      const firstMsg = group.messages[0];
+
+      // ── Date divider ─────────────────────────────────────────────────
+      const dayLbl = dateLabel(firstMsg.sent_at);
+      if (dayLbl && dayLbl !== lastDayLabel) {
+        lastDayLabel = dayLbl;
+        const divider = document.createElement("div");
+        divider.className = "date-divider";
+        divider.textContent = dayLbl;
+        $messages.appendChild(divider);
+      }
+
+      // ── Message group ─────────────────────────────────────────────────
+      const $group = document.createElement("div");
+      $group.className = "msg-group";
+
+      const isInbound = group.direction === "inbound";
+
+      group.messages.forEach((msg, idx) => {
+        const isLast = idx === group.messages.length - 1;
+
+        // Bubble row
+        const $row = document.createElement("div");
+        $row.className = `msg-row ${msg.direction}`;
+
+        const $bubble = document.createElement("div");
+        $bubble.className = `bubble ${msg.direction}`;
+        $bubble.textContent = msg.body || "";
+        $row.appendChild($bubble);
+        $group.appendChild($row);
+
+        // Timestamp + intent pill after the last bubble in the group
+        if (isLast) {
+          // Timestamp
+          const ts = formatTimestamp(msg.sent_at);
+          if (ts) {
+            const $tsRow = document.createElement("div");
+            $tsRow.className = `timestamp-row ${msg.direction}`;
+            const $ts = document.createElement("span");
+            $ts.className = "timestamp";
+            $ts.textContent = ts;
+            $tsRow.appendChild($ts);
+            $group.appendChild($tsRow);
+          }
+
+          // Intent pill — inbound only, non-null intent
+          if (isInbound && msg.intent) {
+            const $intentRow = document.createElement("div");
+            $intentRow.className = "intent-row";
+            const $pill = document.createElement("span");
+            $pill.className = `intent-pill ${intentClass(msg.intent)}`;
+            $pill.textContent = intentLabel(msg.intent);
+            $intentRow.appendChild($pill);
+            $group.appendChild($intentRow);
+          }
+        }
+      });
+
+      $messages.appendChild($group);
+    }
+
+    // Auto-scroll to the bottom
+    requestAnimationFrame(() => {
+      $messages.scrollTop = $messages.scrollHeight;
+    });
+  }
+
+  /* ── Fetch & bootstrap ───────────────────────────────────────────────── */
+
+  async function load() {
+    const params = new URLSearchParams(window.location.search);
+    const chatId  = params.get("chat_id");
+
+    if (!chatId) {
+      showStatus("⚠️", "No chat ID", "Open this page with ?chat_id=… in the URL.");
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/chat/${encodeURIComponent(chatId)}/messages`);
+
+      if (res.status === 404) {
+        showStatus("🔍", "Conversation not found", `No lead matched chat ID "${chatId}".`);
+        return;
+      }
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        showStatus("❌", "Failed to load", `Server returned ${res.status}.${text ? " " + text : ""}`);
+        return;
+      }
+
+      const data = await res.json();
+      renderHeader(data.lead   || {});
+      renderMessages(data.messages || []);
+
+    } catch (err) {
+      showStatus("❌", "Network error", err.message || "Could not reach the server.");
+    }
+  }
+
+  // Kick off on DOMContentLoaded (we're deferred inline, so DOM is ready).
+  load();
+})();
+</script>
+</body>
+</html>
