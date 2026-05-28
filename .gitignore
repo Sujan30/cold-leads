@@ -1,4 +1,5 @@
 .env
+.env.twenty
 __pycache__/
 *.pyc
 *.pyo

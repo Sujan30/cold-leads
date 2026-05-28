@@ -2,7 +2,8 @@
 # Sourced from: https://raw.githubusercontent.com/twentyhq/twenty/main/packages/twenty-docker/docker-compose.yml
 # This is SEPARATE from the Neon DB used by cold-leads — Twenty has its own Postgres instance here.
 #
-# Required: copy .env.twenty.example to .env.twenty and fill in secrets before running.
+# Required: copy .env.twenty.example to .env.twenty and fill in ALL secrets before running.
+# Generate secrets: openssl rand -base64 32
 # Start with: docker compose -f docker-compose.twenty.yml --env-file .env.twenty up -d
 
 name: twenty
@@ -17,20 +18,20 @@ services:
     environment:
       NODE_PORT: 3000
       # Twenty's own Postgres (the db service below — NOT the cold-leads Neon DB)
-      PG_DATABASE_URL: postgres://${PG_DATABASE_USER:-twenty}:${PG_DATABASE_PASSWORD:-twenty}@db:5432/default
+      PG_DATABASE_URL: postgres://${PG_DATABASE_USER}:${PG_DATABASE_PASSWORD}@db:5432/default
 
       # Public URL where Twenty will be reachable (update for production)
       SERVER_URL: ${SERVER_URL:-http://localhost:3000}
 
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
 
-      # Required: secret key used for JWT signing — MUST be changed in production
+      # Required — no default, must be set in .env.twenty
       # Generate with: openssl rand -base64 32
-      APP_SECRET: ${APP_SECRET:-change-me-in-production}
+      APP_SECRET: ${APP_SECRET}
 
-      # Required: encryption key for OAuth tokens and stored secrets
+      # Required — no default, must be set in .env.twenty
       # Generate with: openssl rand -base64 32
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-change-me-in-production}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       FALLBACK_ENCRYPTION_KEY: ${FALLBACK_ENCRYPTION_KEY:-}
 
       # Storage: local filesystem by default (no S3 required)
@@ -87,12 +88,12 @@ services:
       - server-local-data:/app/packages/twenty-server/.local-storage
     command: ["yarn", "worker:prod"]
     environment:
-      PG_DATABASE_URL: postgres://${PG_DATABASE_USER:-twenty}:${PG_DATABASE_PASSWORD:-twenty}@db:5432/default
+      PG_DATABASE_URL: postgres://${PG_DATABASE_USER}:${PG_DATABASE_PASSWORD}@db:5432/default
       SERVER_URL: ${SERVER_URL:-http://localhost:3000}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
 
-      APP_SECRET: ${APP_SECRET:-change-me-in-production}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-change-me-in-production}
+      APP_SECRET: ${APP_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       FALLBACK_ENCRYPTION_KEY: ${FALLBACK_ENCRYPTION_KEY:-}
 
       # Workers should not run migrations or register cron jobs — server handles that
@@ -127,10 +128,10 @@ services:
       - db-data:/var/lib/postgresql/data
     environment:
       POSTGRES_DB: ${PG_DATABASE_NAME:-default}
-      POSTGRES_USER: ${PG_DATABASE_USER:-twenty}
-      POSTGRES_PASSWORD: ${PG_DATABASE_PASSWORD:-twenty}
+      POSTGRES_USER: ${PG_DATABASE_USER}
+      POSTGRES_PASSWORD: ${PG_DATABASE_PASSWORD}
     healthcheck:
-      test: pg_isready -U ${PG_DATABASE_USER:-twenty} -h localhost -d postgres
+      test: pg_isready -U ${PG_DATABASE_USER} -h localhost -d postgres
       interval: 5s
       timeout: 5s
       retries: 10
