@@ -51,6 +51,8 @@ class Lead(Base):
     calcom_booking_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     twenty_person_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     twenty_opportunity_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    latest_intent: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    booked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reply_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     reply_first_pending_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

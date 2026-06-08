@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     twenty_api_url: str = ""
     twenty_api_key: str = ""
     twenty_workspace_id: str = ""
+    chat_viewer_base_url: str = "http://localhost:8000"
 
     @property
     def async_database_url(self) -> str:

@@ -133,11 +133,13 @@ async def _handle_qualifying(lead: Lead, db: AsyncSession) -> None:
 
 
 async def _handle_no_reply(lead: Lead, db: AsyncSession) -> None:
+    from app.integrations import twenty
     from datetime import timedelta
     cutoff = datetime.now(timezone.utc) - timedelta(days=30)
     if lead.updated_at.replace(tzinfo=timezone.utc) < cutoff:
         lead.state = LeadState.dormant
         await db.commit()
+        await twenty.sync_lead(lead, db)
         logger.info("Lead %s moved to DORMANT (30 days no reply)", lead.id)
 
 
@@ -273,6 +275,7 @@ async def process_pending_reply(lead: Lead, db: AsyncSession) -> None:
 
     intent = await classifier.classify(combined_latest, context=recent_context)
     logger.info("[SWEEPER] lead=%d intent=%s", lead.id, intent)
+    lead.latest_intent = intent
 
     if intent == "not_interested":
         lead.state = LeadState.dormant
@@ -305,6 +308,7 @@ async def process_pending_reply(lead: Lead, db: AsyncSession) -> None:
                 if uid:
                     lead.calcom_booking_id = uid
                     lead.state = LeadState.booked
+                    lead.booked_at = datetime.now(timezone.utc)
                     slot_str = booking_svc.format_slot(proposed)
                     confirmation = (
                         f"You're all set! I've booked a 30-minute call with {settings.agents_name} "
@@ -317,12 +321,14 @@ async def process_pending_reply(lead: Lead, db: AsyncSession) -> None:
                     )
                 else:
                     lead.state = LeadState.booked
+                    lead.booked_at = datetime.now(timezone.utc)
                     link = calcom.booking_link()
                     confirmation = (
                         f"Great! You can grab a time directly here: {link} — "
                         f"pick whatever works best for you and you'll get a confirmation right away."
                     )
                     await db.commit()
+                    await twenty.sync_lead(lead, db)
                     await escalate_to_agent(
                         lead, f"Lead wants to book — Cal.com create_booking failed, sent link", db
                     )
@@ -344,7 +350,9 @@ async def process_pending_reply(lead: Lead, db: AsyncSession) -> None:
                         f"You can also grab a slot directly: {link}"
                     )
                     lead.state = LeadState.booked
+                    lead.booked_at = datetime.now(timezone.utc)
                     await db.commit()
+                    await twenty.sync_lead(lead, db)
                     await escalate_to_agent(
                         lead, f"Lead wants to book — no slots available, sent link", db
                     )
@@ -364,23 +372,27 @@ async def process_pending_reply(lead: Lead, db: AsyncSession) -> None:
             else:
                 logger.info("[BOOKING] lead=%d no slots available — sending link", lead.id)
                 lead.state = LeadState.booked
+                lead.booked_at = datetime.now(timezone.utc)
                 link = calcom.booking_link()
                 confirmation = (
                     f"Perfect! Here's the link to book a 30-minute call with {settings.agents_name}: "
                     f"{link} — just pick a time that works and you'll get a confirmation instantly."
                 )
                 await db.commit()
+                await twenty.sync_lead(lead, db)
                 await escalate_to_agent(lead, f"Lead wants to book — no slots available, sent link", db)
         else:
             # Has a proposed time but no email — can't auto-book without email
             logger.info("[BOOKING] lead=%d has time but no email — sending link", lead.id)
             lead.state = LeadState.booked
+            lead.booked_at = datetime.now(timezone.utc)
             link = calcom.booking_link()
             confirmation = (
                 f"Perfect! Here's the link to book a 30-minute call with {settings.agents_name}: "
                 f"{link} — just pick a time that works and you'll get a confirmation instantly."
             )
             await db.commit()
+            await twenty.sync_lead(lead, db)
             await escalate_to_agent(lead, f"Lead wants to book — no email on file, sent link", db)
 
         if inbound_channel == MessageChannel.text and lead.phone:
@@ -393,6 +405,7 @@ async def process_pending_reply(lead: Lead, db: AsyncSession) -> None:
             await sendgrid.send(lead.email, confirmation, subject=f"Meeting with {settings.agents_name}")
             await _append_message(lead.id, MessageDirection.outbound, MessageChannel.email, confirmation, db)
         await db.commit()
+        await twenty.sync_lead(lead, db)
         return
 
     # Draft and send a conversational reply

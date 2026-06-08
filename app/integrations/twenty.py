@@ -80,6 +80,28 @@ def _build_person_data(lead: Lead) -> dict:
             "primaryPhoneCallingCode": "+1",
         }
 
+    # Custom fields (camelCase — Twenty's GraphQL schema uses camelCase for custom fields)
+    if lead.state:
+        data["leadState"] = lead.state.value
+    if lead.temperature:
+        data["temperature"] = lead.temperature.value
+    if lead.latest_intent:
+        data["latestIntent"] = lead.latest_intent
+    if lead.channel:
+        data["channel"] = lead.channel.value
+    if lead.linq_chat_id:
+        data["linqChatId"] = lead.linq_chat_id
+        data["conversationUrl"] = {
+            "primaryLinkUrl": f"{settings.chat_viewer_base_url}/chat-viewer?chat_id={lead.linq_chat_id}",
+            "primaryLinkLabel": "Open conversation",
+        }
+    if lead.property_interest:
+        data["propertyInterest"] = lead.property_interest
+    if lead.source:
+        data["source"] = lead.source
+    if lead.booked_at:
+        data["bookedAt"] = lead.booked_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+
     # Include the existing ID so Twenty upserts by ID rather than deduplicating
     # on email/phone (which could match the wrong record on edge cases).
     if lead.twenty_person_id:

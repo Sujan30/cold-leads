@@ -20,9 +20,9 @@ async def seed():
 
         leads = [
             Lead(
-            name="Test Lead One",
-            phone="+ADD_YOUR_NUMBER_HERE",
-            email="test1@example.com",
+            name="Sujan",
+            phone="+19259676795",
+            email="nandikolsujan@gmail.com",
             source="test",
             property_interest="Looking to buy in San Jose, 5 bed 4 bath, budget 1.7M",
             temperature=LeadTemperature.hot_inbound,
